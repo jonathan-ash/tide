@@ -1476,14 +1476,14 @@ in the file that are similar to the error at point."
               (tide-rename-symbol))))))))
 
 (defun tide-refactor ()
-  "Refactor code at point or current region"
+  "Refactor code at point or current region!!!"
   (interactive)
   (let ((response (tide-command:getApplicableRefactors)))
     (tide-on-response-success response (:min-version "2.4")
       (-if-let (body (plist-get response :body))
           (tide-apply-refactor
            (tide-select-refactor body))
-        (message "No refactors available.")))))
+        (message "No refactors available. !!!")))))
 
 ;;; Disable tslint warnings
 

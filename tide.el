@@ -1425,8 +1425,6 @@ in the file that are similar to the error at point."
       (-when-let (changes (plist-get response :body))
         (tide-apply-code-edits changes)))))
 
-;;; Refactor
-
 (defun tide-location-or-range ()
   (if (use-region-p)
       (let ((start (region-beginning))
@@ -1435,16 +1433,17 @@ in the file that are similar to the error at point."
           :endLine ,(tide-line-number-at-pos end) :endOffset ,(tide-offset end)))
     `(:line ,(tide-line-number-at-pos) :offset ,(tide-current-offset))))
 
-(defun tide-command:getEditsForRefactor (refactor action)
+(defun tide-command:getEditsForRefactor (refactor action targetfile)
   (tide-send-command-sync
    "getEditsForRefactor"
-   (append `(:refactor ,refactor :action ,action :file ,(tide-buffer-file-name))
+   (append `(:refactor ,refactor :action ,action :file ,(tide-buffer-file-name)
+             :interactiveRefactorArguments (:targetFile ,targetfile))
            (tide-location-or-range))))
 
 (defun tide-command:getApplicableRefactors ()
   (tide-send-command-sync
    "getApplicableRefactors"
-   (append `(:file ,(tide-buffer-file-name)) (tide-location-or-range))))
+   (append `(:file ,(tide-buffer-file-name) :includeInteractiveActions "true") (tide-location-or-range))))
 
 (defun tide-get-refactor-description (refactor)
   (plist-get refactor :description))
@@ -1463,8 +1462,12 @@ in the file that are similar to the error at point."
     (tide-select-item-from-list "Select refactor: " available-refactors
                                 #'tide-get-refactor-description (tide-can-use-popup-p 'refactor))))
 
+
 (defun tide-apply-refactor (selected)
-  (let ((response (tide-command:getEditsForRefactor (plist-get selected :refactor) (plist-get selected :action))))
+  (let ((response (tide-command:getEditsForRefactor
+                   (plist-get selected :refactor)
+                   (plist-get selected :action)
+                   (plist-get selected :targetfile))))
     (tide-on-response-success response
       (progn
         (deactivate-mark)
@@ -1475,25 +1478,29 @@ in the file that are similar to the error at point."
             (when (tide-can-rename-symbol-p)
               (tide-rename-symbol))))))))
 
-(defun tide-refactor-more ()
-  "Refactor code at point or current region!!!"
+(defun tide-refactor-file-menu ()
   (interactive)
-  (let ((response (tide-command:getApplicableRefactors)))
-    (tide-on-response-success response (:min-version "2.4")
-      (-if-let (body (plist-get response :body))
-          (tide-apply-refactor
-           (tide-select-refactor body))
-        (message "No refactors available. !!!")))))
+  (let* ((project-root (projectile-acquire-root))
+         (file (projectile-completing-read "Find file: "
+                                           (projectile-project-files project-root))))
+                                                (concat project-root file)))
+
+(defun tide-handle-target-file (selected-refactor)
+  "Handle getting target file location if required for the SELECTED-REFACTOR.
+ie such as the 'Move to file' refactor. Otherwise return SELECTED-REFACTOR unchanged"
+  (if (string= (plist-get selected-refactor :refactor) "Move to file")
+      (append  (list :targetfile (tide-refactor-file-menu)) selected-refactor) selected-refactor))
+
 
 (defun tide-refactor ()
-  "Refactor code at point or current region!!!"
+  "Refactor code at point or current region."
   (interactive)
   (let ((response (tide-command:getApplicableRefactors)))
     (tide-on-response-success response (:min-version "2.4")
       (-if-let (body (plist-get response :body))
-          (tide-apply-refactor
-           (tide-select-refactor body))
-        (message "No refactors available. !!!")))))
+                     (tide-apply-refactor
+                        (tide-handle-target-file (tide-select-refactor body))))
+        (message "No refactors available"))))
 
 ;;; Disable tslint warnings
 
